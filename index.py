@@ -204,7 +204,7 @@ def search_jobs():
     
     return Response(
         scrape_jobs(job_title, location, count, days_filter),
-        mimetype='application/x-ndjson'
+        mimetype='text/event-stream'
     )
 
 @app.route('/api/jobs/list', methods=['GET'])
