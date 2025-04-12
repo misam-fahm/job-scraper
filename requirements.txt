@@ -1,6 +1,6 @@
-PyQt5
-PyQt5-Qt5
-PyQt5-sip
+flask
 selenium
 webdriver-manager
 requests
+flask_cors
+werkzeug
