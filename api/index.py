@@ -1,34 +1,40 @@
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import json
 import os
 import re
 import time
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+CORS(app)
 
-def scrape_jobs(job_title, location, desired_jobs=float('inf'), days_filter=None):
-    """Generator function to scrape jobs and yield results as they're found"""
-    url = f"https://www.naukri.com/{job_title}-jobs-in-{location}"
+def get_chrome_driver():
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-notifications")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    options.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36")
     
-    # For Ubuntu server deployment
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    
-    driver = webdriver.Chrome(options=options)
+    service = Service('/usr/local/bin/chromedriver')
+    return webdriver.Chrome(service=service, options=options)
+
+def scrape_jobs(job_title, location, desired_jobs=float('inf'), days_filter=None):
+    """Generator function to scrape jobs and yield results as they're found"""
+    url = f"https://www.naukri.com/{job_title}-jobs-in-{location}"
+    driver = get_chrome_driver()
     driver.get(url)
 
     scraped_jobs = 0
@@ -141,9 +147,14 @@ def check_days_filter(posted_text, days):
 
 def save_job_to_file(job_data):
     """Save job data to a JSON file"""
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    os.makedirs(data_dir, exist_ok=True)
+    
+    json_file = os.path.join(data_dir, "job_listings.json")
     existing_jobs = []
-    if os.path.exists("job_listings.json"):
-        with open("job_listings.json", "r", encoding="utf-8") as file:
+    
+    if os.path.exists(json_file):
+        with open(json_file, "r", encoding="utf-8") as file:
             try:
                 existing_jobs = json.load(file)
             except json.JSONDecodeError:
@@ -154,8 +165,19 @@ def save_job_to_file(job_data):
     existing_jobs.append(job_data)
     
     # Save the updated list back to the file
-    with open("job_listings.json", "w", encoding="utf-8") as file:
+    with open(json_file, "w", encoding="utf-8") as file:
         json.dump(existing_jobs, file, indent=4, ensure_ascii=False)
+
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({
+        "status": "running",
+        "message": "Job scraper API is operational",
+        "endpoints": {
+            "/api/jobs/search": "Search for jobs with parameters: job_title, location, count, days",
+            "/api/jobs/list": "List all saved jobs"
+        }
+    })
 
 @app.route('/api/jobs/search', methods=['GET'])
 def search_jobs():
@@ -181,15 +203,18 @@ def search_jobs():
         return jsonify({"error": "Please provide both job_title and location parameters"}), 400
     
     return Response(
-        stream_with_context(scrape_jobs(job_title, location, count, days_filter)),
+        scrape_jobs(job_title, location, count, days_filter),
         mimetype='application/x-ndjson'
     )
 
 @app.route('/api/jobs/list', methods=['GET'])
 def list_jobs():
     """Return all previously saved jobs"""
-    if os.path.exists("job_listings.json"):
-        with open("job_listings.json", "r", encoding="utf-8") as file:
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    json_file = os.path.join(data_dir, "job_listings.json")
+    
+    if os.path.exists(json_file):
+        with open(json_file, "r", encoding="utf-8") as file:
             try:
                 jobs = json.load(file)
                 return jsonify(jobs)
@@ -201,9 +226,12 @@ def list_jobs():
 @app.route('/api/jobs/clear', methods=['POST'])
 def clear_jobs():
     """Clear all saved jobs"""
-    if os.path.exists("job_listings.json"):
-        os.remove("job_listings.json")
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    json_file = os.path.join(data_dir, "job_listings.json")
+    
+    if os.path.exists(json_file):
+        os.remove(json_file)
     return jsonify({"message": "Job listings cleared successfully"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
