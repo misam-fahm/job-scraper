@@ -10,7 +10,6 @@ import json
 import os
 import re
 import time
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app)
@@ -202,10 +201,12 @@ def search_jobs():
     if not job_title or not location:
         return jsonify({"error": "Please provide both job_title and location parameters"}), 400
     
-    return Response(
-        scrape_jobs(job_title, location, count, days_filter),
-        mimetype='text/event-stream'
-    )
+    jobs = []
+    for job_json in scrape_jobs(job_title, location, count, days_filter):
+        jobs.append(json.loads(job_json))
+    
+    return jsonify(jobs)
+
 
 @app.route('/api/jobs/list', methods=['GET'])
 def list_jobs():
@@ -234,4 +235,4 @@ def clear_jobs():
     return jsonify({"message": "Job listings cleared successfully"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=3000, debug=True)
